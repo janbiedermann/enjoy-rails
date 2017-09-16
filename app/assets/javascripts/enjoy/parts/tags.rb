@@ -1,4 +1,4 @@
-require 'enjoy/v_node'
+require 'enjoy/parts/v_node'
 
 module Enjoy
   module Parts
@@ -20,7 +20,7 @@ module Enjoy
         # we override Kernel.p and we define div hoping that it would not matter in this context
         # TODO: document p and div issue
         define_method(tag) do |*params, &block|
-          VNode.new(tag, self.base_v_node, [], *params, &block)
+          ::Enjoy::Parts::VNode.new(tag, self, nil, *params, &block)
         end
         alias_method tag.upcase, tag
         const_set tag.upcase, tag
@@ -30,8 +30,8 @@ module Enjoy
       # where there is no preceeding scope.
       def method_missing(name, *params, &block)
         component = find_component(name)
-        return component.new(base_v_node, base_dom_node).render if component
-        Object.method_missing(name, *params, &children)
+        return component.new('div', self, base_dom_node).render if component
+        Object.method_missing(name, *params, &block)
       end
 
       # install methods with the same name as the component in the parent class/module
@@ -40,8 +40,8 @@ module Enjoy
         def included(component)
           name, parent = find_name_and_parent(component)
           tag_names_module = Module.new do
-            define_method name do |*params, &children|
-              component.new(base_v_node, base_dom_node).render_component({}, *params, &children)
+            define_method name do |*params, &block|
+              component.new('div', self, base_dom_node).internal_render({}, *params, &block)
             end
           end
           parent.extend(tag_names_module)

@@ -1,4 +1,5 @@
-require 'enjoy/v_node'
+require 'enjoy/parts/v_node'
+require 'enjoy/parts/component_render'
 require 'enjoy/parts/callbacks'
 require 'enjoy/parts/api'
 require 'enjoy/parts/class_methods'
@@ -9,10 +10,11 @@ module Enjoy
   class Component
     module Mixin
       def self.included(base)
+        base.include(Enjoy::Parts::VNode::Mixin)
         base.include(Enjoy::Parts::API)
         base.include(Enjoy::Parts::Callbacks)
         base.include(Enjoy::Parts::DslInstanceMethods)
-        base.include(Enjoy::Parts::Tags)
+        base.include(Enjoy::Parts::ComponentRender) # this is required to override internal_render from VNode::Mixin
         base.class_eval do
           define_callback :before_mount
           define_callback :after_mount
@@ -28,69 +30,7 @@ module Enjoy
       # parent_dom_node: the dom node this component is atached to
       # props: properties
       # state: state
-      attr_accessor :base_dom_node, :base_v_node, :opts, :parent_dom_node, :parent_v_node, :prev_props, :prev_state, :props, :state
-
-      def initialize(parent_v_node = nil, parent_dom_node = nil)
-        @disable = false
-        @opts = {}
-        @parent_dom_node = parent_dom_node
-        @parent_v_node = parent_v_node
-        @props = {}
-        @state = {}
-      end
-
-      # supported callbacks:
-      # component_will_mount: before the component gets mounted to the DOM
-      # component_did_mount: after the component gets mounted to the DOM
-      # component_will_unmount: prior to removal from the DOM
-      #
-      # component_will_receive_props: before new props get accepted
-      #
-      # should_component_update: before render(). Return false to skip render
-      # component_will_update: before render()
-      # component_did_update: after render()
-
-      def component_will_mount
-        run_callback(:before_mount)
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      def component_did_mount
-        run_callback(:after_mount)
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      def component_will_receive_props(next_props)
-        run_callback(:before_receive_props, Hash.new(next_props))
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      def component_will_update(next_props, next_state)
-        run_callback(:before_update, Hash.new(next_props), Hash.new(next_state))
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      def component_did_update(prev_props, prev_state)
-        run_callback(:after_update, Hash.new(prev_props), Hash.new(prev_state))
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      def component_will_unmount
-        run_callback(:before_unmount)
-      rescue Exception => e
-        self.class.process_exception(e, self)
-      end
-
-      unless method_defined?(:render)
-        def render
-          raise 'no render defined'
-        end
-      end
+      attr_accessor :prev_attributes, :prev_state, :state
 
       def clean!
         @dirty = false
@@ -116,36 +56,8 @@ module Enjoy
         @disabled = false
       end
 
-      # ** Render a Component, triggering necessary lifecycle events.
-      # *	@param {Object} [opts] { mount_all: false, is_child: false, sync_render: false, force_render: false }
-      # *	@param {boolean} [opts.build=false]		If `true`, component will build and store a DOM node if not already associated with one.
-      # *	returns reference to rendered dom_node
-      def render_component(props, &block)
-        # return if component is busy rendering or out of dom
-        return if disabled?
-
-        raise self.class.name + ': at least either tag or block must be given for render' unless base_v_node || block
-
-        state = @state
-        prev_props = @prev_props || props
-        prev_state = @prev_state || state
-
-        # if @base_dom_node exists, component has been rendered, so it will be an update
-        # !! makes it a boolean
-        is_update = !!@base_dom_node
-        skip = false
-
-        # if updating, ask component if it wants to be updated
-        # otherwise invoke :component_will_update callback
-        private_invoke_will_update(prev_props, prev_state, props, state) if is_update
-
-        # component will be rendered
-        clean!
-
-        private_render_and_diff(is_update, &block) unless skip
-
-        private_enjoy_housekeeping_and_invoke_did_update(is_update, skip, opts, prev_props, prev_state)
-        @base_v_node
+      def is_component?
+        true
       end
 
       # ** Remove a component from the DOM and recycle it.
@@ -163,39 +75,38 @@ module Enjoy
 
       private
 
-      def private_enjoy_housekeeping_and_invoke_did_update(is_update, skip, opts, prev_props, prev_state)
+      def private_enjoy_housekeeping_and_invoke_did_update(is_update, skip, opts, prev_attributes, prev_state)
         if !is_update || opts[:mount_all]
           Enjoy.mounts.unshift(self)
         elsif !skip && is_update
           # // Ensure that pending componentDidMount() hooks of child components
           # // are called before the componentDidUpdate() hook in the parent.
-          component_did_update(prev_props, prev_state)
+          component_did_update(prev_attributes, prev_state)
         end
         Enjoy.flush_mounts if Enjoy.diff_level == 0 && !opts[:is_child]
       end
 
-      def private_invoke_will_update(prev_props, prev_state, props, state)
-        @props = prev_props
+      def private_invoke_will_update(prev_attributes, prev_state, attributes, state)
+        @attributes = prev_attributes
         @state = prev_state
-        if !opts[:force_render] && respond_to?(:should_component_update?) && !send(:should_component_update?, props, state)
-          skip = true
+        if !opts[:force_render] && respond_to?(:should_component_update?) && !send(:should_component_update?, attributes, state)
+          @skip = true
         elsif
-          component_will_update(props, state)
+          component_will_update(attributes, state)
         end
-        @props = props
+        @attributes = attributes
         @state = state
-        @prev_props = @prev_state = nil
+        @prev_attributes = @prev_state = nil
       end
 
       def private_render_and_diff(is_update, &block)
         res = instance_exec &block
-        @parent_v_node.children << res if @parent_v_node && !@base_v_node
-        @base_v_node = res unless @base_v_node
-        @base_v_node.component = self
+        @parent_v_node.children << res if @parent_v_node && !res.respond_to?(:is_vnode?)
+
         prev_base_dom_node = @base_dom_node
         if opts[:sync_render] || is_update
           opts[:mount_all] = opts[:mount_all] || !is_update
-          @base_dom_node = Enjoy.diff(@base_dom_node, @base_v_node, opts, @parent_dom_node, true)
+          @base_dom_node = Enjoy.diff(@base_dom_node, self, @opts, @parent_dom_node, true)
         end
 
         if @base_dom_node && `this.base_dom_node!==prev_base_dom_node`
@@ -209,27 +120,27 @@ module Enjoy
       #   *	@param {Object} [opts]
       #   *	@param {boolean} [opts.renderSync=false]	If `true` and {@link options.syncComponentUpdates} is `true`, triggers synchronous rendering.
       #   *	@param {boolean} [opts.render=true]			If `false`, no render will be triggered.
-      def private_set_properties(props, opts)
+      def private_set_properties(attributes, opts)
         # TODO: run callback?
         return if disabled?
         disable!
 
-        @key = props[:key]
-        props.delete(:key) if @key
+        @key = attributes[:key]
+        attributes.delete(:key) if @key
 
         if !@base_dom_node || opts[:mount_all]
           component_will_mount
         else
-          component_will_receive_props(props)
+          component_will_receive_attributes(attributes)
         end
 
-        @prev_props = @props unless @prev_props
-        @props = opts[:replace] ? props : @prev_props.merge(props)
+        @prev_attributes = @attributes unless @prev_attributes
+        @attributes = opts[:replace] ? attributes : @prev_attributes.merge(attributes)
 
         enable!
 
         if opts[:sync_render] || Enjoy.options[:sync_component_updates] || !@base_dom_node
-          render_component()
+          internal_render()
         else
           Enjoy.enqueue_render(self)
         end
@@ -245,5 +156,11 @@ module Enjoy
         Enjoy.enqueue_render(self)
       end
     end
+  end
+end
+
+module Enjoy
+  class Component
+    include Enjoy::Component::Mixin
   end
 end

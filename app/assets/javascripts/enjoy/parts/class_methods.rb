@@ -1,4 +1,4 @@
-require 'enjoy/v_node'
+require 'enjoy/parts/v_node'
 
 module Enjoy
   module Parts
@@ -28,13 +28,12 @@ module Enjoy
       def render(tag, params = {}, &block)
         if tag
           define_method(:render) do
-            container = VNode.new(tag, parent_v_node, [], *params)
-            self.base_v_node = container
-            render_component(params, &block)
+            self.node_name = tag
+            internal_render(params, &block)
           end
         else
           define_method(:render) do
-            render_component(params, &block)
+            internal_render(params, &block)
           end
         end
       end

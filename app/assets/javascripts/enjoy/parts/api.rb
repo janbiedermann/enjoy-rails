@@ -12,7 +12,7 @@ module Enjoy
       # /** Immediately perform a synchronous re-render of the component.
       def force_update!
         opts[:force_render] = true
-        render_component
+        internal_render
         opts[:force_render] = false
       end
 

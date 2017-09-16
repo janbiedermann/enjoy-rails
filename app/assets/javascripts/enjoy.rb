@@ -1,4 +1,4 @@
-require 'enjoy/v_node'
+require 'enjoy/parts/v_node'
 require 'enjoy/component'
 
 module Enjoy
@@ -46,7 +46,6 @@ module Enjoy
   #   *	@param {VNode} vnode			A VNode (with descendants forming a tree) representing the desired DOM structure
   #   *	@returns {Element} dom			The created/mutated element
   def self.diff(dom_node, vnode, opts, parent_dom_node, component_root)
-    puts "Diff Entry"
     # diffLevel having been 0 here indicates initial entry into the diff (not a subdiff)
     @@svg_mode = false
     @@hydrating = false
@@ -119,7 +118,7 @@ module Enjoy
       vchild = vchildren[i]
       child = nil
 
-      key = vchild.is_a?(VNode) ? vchild.key : nil
+      key = vchild.is_a?(::Enjoy::Parts::VNode) ? vchild.key : nil
       if key && keyed_len && keyed[key]
         child = keyed[key]
         keyed[key] = nil
@@ -165,7 +164,7 @@ module Enjoy
 
   def self.enqueue_render(component)
     if !component.dirty? && @@items_to_render.push(component).size == 1
-      defer { rerender }
+      @opts[:sync_render] ? defer { rerender } : rerender
     end
   end
 
@@ -215,7 +214,7 @@ module Enjoy
         recollect_node_tree(dom_node, true)
       end
       `out['__prop_cache__'] = true`
-    elsif vnode.is_a?(VNode)
+    elsif vnode.respond_to?(:is_vnode?)
       # If the VNode represents a Component, perform a component diff:
 
       vnode_name = vnode.node_name
@@ -303,7 +302,7 @@ module Enjoy
   def self.rerender
     list = @@items_to_render
     @@items_to_render = []
-    list.each { |i|	i.render_component if i.dirty? }
+    list.each { |i|	i.internal_render if i.dirty? }
   end
 
   # /** Set a named attribute on the given Node, with special behavior for some names and event handlers.
@@ -370,7 +369,7 @@ module Enjoy
   def self.start(component_class, parent = nil)
     ready? do
       parent = Enjoy.find(tag: 'body') unless parent
-      c = component_class.new(nil, parent, true)
+      c = component_class.new('div', nil, parent)
       c.opts[:sync_render] = true
       c.render
     end
