@@ -24,7 +24,65 @@ class OlaComponent
   include Enjoy::Component::Mixin
 
   render do
-    DIV { 'text' }
+    DIV { 'text to click' }
+      .on(:click) do
+        `alert('hello')`
+      end
+    DIV {
+      DIV { 'text here' }
+      P { 'lorem ipsum dolor 2' }
+      DIV {
+        DIV { 'text here to click for promise' }.promise_on(:click)
+                                                .do {
+                                                  `alert('I, Promise')`
+                                                }
+        P { 'lorem ipsum dolor 2' }
+        DIV {
+          DIV { 'text here' }
+          P { 'lorem ipsum dolor 2' }
+          DIV {
+            DIV { 'text here' }
+            P { 'lorem ipsum dolor 2' }
+            DIV {
+              DIV { 'text here' }
+              P { 'lorem ipsum dolor 2' }
+              DIV {
+                DIV { 'text here' }
+                P { 'lorem ipsum dolor 2' }
+                DIV {
+                  DIV { 'text here' }
+                  P { 'lorem ipsum dolor 2' }
+                  DIV {
+                    DIV { 'text here' }
+                    P { 'lorem ipsum dolor 2' }
+                    DIV {
+                      DIV { 'text here' }
+                      P { 'lorem ipsum dolor 2' }
+                      DIV {
+                        DIV { 'text here' }
+                        P { 'lorem ipsum dolor 2' }
+                        DIV {
+                          DIV { 'text here' }
+                          P { 'lorem ipsum dolor 2' }
+                          DIV {
+                            DIV { 'text here' }
+                            P { 'lorem ipsum dolor 2' }
+                            DIV {
+                              DIV { 'text here' }
+                              P { 'lorem ipsum dolor 2' }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   end
 end
 
@@ -47,33 +105,13 @@ end
 
 class MasterComponent < Enjoy::Component
   render do
-    1000.times do
+    10.times do
       TestComponent()
     end
   end
 end
 
 benchmark('app') { Enjoy.start(MasterComponent) }
-i = 0
-`i = document.getElementsByTagName("*").length`
-puts "rendered #{i} nodes"
 
-benchmark('app') { Enjoy.start(MasterComponent) }
-benchmark('app') { Enjoy.start(MasterComponent) }
-benchmark('app') { Enjoy.start(MasterComponent) }
-benchmark('app') { Enjoy.start(MasterComponent) }
-`i = document.getElementsByTagName("*").length`
-puts "rendered #{i} nodes"
+`setTimeout(function() { console.log(document.getElementsByTagName("*").length) }, 1000)`
 
-# benchmark('total') do
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# benchmark('app') { Enjoy.start(TestComponent) }
-# end
