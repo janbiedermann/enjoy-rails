@@ -18,7 +18,6 @@ module Enjoy
   end
 
   @@items_to_render = []
-  @@listeners = []
 
   # If `true`, property changes via set_properties trigger synchronous component updates.
   @@options = { sync_component_updates: true }
@@ -32,14 +31,6 @@ module Enjoy
   end
 
   IS_NON_DIMENSIONAL = /acit|ex(?:s|g|n|p|$)|rph|ows|mnc|ntw|ine[ch]|zoo|^ord/i
-
-  # call block asynchonously, return promise
-  # defer = 'function' == typeof Promise ? Promise.resolve().then.bind(Promise.resolve()) : setTimeout
-  def self.defer
-    promise = Promise.new
-    promise.resolve(yield)
-    promise
-  end
 
   # /** Apply differences in a given vnode (and it's deep children) to a real DOM Node.
   #   *	@param {Element} [dom=null]		A DOM node to mutate into the shape of the `vnode`
@@ -71,19 +62,20 @@ module Enjoy
   # *	@param {Element} dom		Element with attributes to diff `attrs` against
   # *	@param {Object} attrs		The desired end-state key-value attribute pairs
   # *	@param {Object} old			Current/previous attributes (from previous VNode or element's prop cache)
-  def self.diff_attributes(dom_node, attrs, old)
+  def self.diff_attributes(dom_node, v_node, old)
+    attrs = v_node.attributes
     old.each do |name, val|
       next unless !(attrs && attrs[name]) && val
       old_name = val
       old[name] = nil
-      set_accessor(dom_node, name, old_name, nil, @svg_mode)
+      set_accessor(dom_node, v_node, name, old_name, nil, @svg_mode)
     end
     attrs.each do |name, val|
       next unless name != 'children' && name != 'innerHTML' && !old.keys.include?(name) ||
         attrs[name] != (name == 'value' || name == ('checked' ? `dom_node[name]` : old[name]))
       old_name = old[name]
       old[name] = val
-      set_accessor(dom_node, name, old_name, old[name], @svg_mode)
+      set_accessor(dom_node, v_node, name, old_name, old[name], @svg_mode)
     end
   end
 
@@ -164,12 +156,8 @@ module Enjoy
 
   def self.enqueue_render(component)
     if !component.dirty? && @@items_to_render.push(component).size == 1
-      @opts[:sync_render] ? defer { rerender } : rerender
+      rerender
     end
-  end
-
-  def self.event_proxy(e) # check
-    @@listeners[e.type].call(options.event && options.event(e) || e) # check
   end
 
   def self.find(node_descr)
@@ -251,7 +239,7 @@ module Enjoy
       elsif vchildren && vchildren.size || fc # otherwise, if there are existing or new children, diff them:
         diff_node_children(out, vchildren, opts, @hydrating || props[:dangerously_set_inner_html])
       end
-      diff_attributes(out, vnode.attributes, props)
+      diff_attributes(out, vnode, props)
     end
     @svg_mode = prev_svg_mode
 
@@ -312,7 +300,7 @@ module Enjoy
   # *	@param {any} old	The last value that was set for this name/node pair
   # *	@param {any} value	An attribute value, such as a function to be used as an event handler
   # *	@param {Boolean} isSvg	Are we currently diffing inside an svg?
-  def self.set_accessor(dom_node, name, old, value, svg_mode)
+  def self.set_accessor(dom_node, v_node, name, old, value, svg_mode)
     name = 'class' if name == 'className'
 
     # ignore name == 'key'
@@ -329,15 +317,15 @@ module Enjoy
       end
     elsif name == 'dangerouslySetInnerHTML'
       `dom_node.innerHTML = value || ''`
-    elsif name[0..1] == 'on'
-      use_capture = name != (name = name.sub(/Capture$/, ''))
-      name = name.downcase[2..-1]
+    elsif name.is_a?(String) && name[0..1] == 'on'
+      name_woc = name.sub(/_capture$/, '')
+      use_capture = name != name_woc
+      name = name_woc.downcase[2..-1]
       if value
-        `dom_node.addEventListener(name, this.$event_proxy, use_capture)` unless old
+        `dom_node.addEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture)` unless old
       else
-        `dom_node.removeEventListener(name, this.$event_proxy, use_capture)`
+        `dom_node.removeEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture)`
       end
-      @listeners[name] = value
     elsif name != 'list' && name != 'type' && !svg_mode && `name in dom_node`
       set_property(dom_node, name, value ? value : '')
       `dom_node.removeAttribute(name)` unless value
@@ -349,11 +337,11 @@ module Enjoy
         else
           `dom_node.removeAttribute(name)`
         end
-      elsif value != function # check
+      else
         if ns
           `dom_node.setAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase(), value)`
         else
-          `dom_node.set_attribute(name, value)`
+          `dom_node.setAttribute(name, value)`
         end
       end
     end

@@ -1,11 +1,13 @@
 require 'enjoy/parts/tags'
+require 'enjoy/parts/event_support'
 
 module Enjoy
   module Parts
     class VNode
       module Mixin
         def self.included(base)
-          base.include(Enjoy::Parts::Tags)
+          base.include(::Enjoy::Parts::Tags)
+          base.include(::Enjoy::Parts::EventSupport)
         end
 
         # virtual dom node
@@ -14,6 +16,7 @@ module Enjoy
         def initialize(tag, parent_v_node = nil, parent_dom_node = nil, attributes = {}, &block)
           @attributes = attributes || {}
           @children = []
+          @events = {}
           @key = @attributes[:key] if @attributes[:key]
           @node_name = tag
           @opts = {}
