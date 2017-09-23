@@ -10,11 +10,11 @@ module Enjoy
   class Component
     module Mixin
       def self.included(base)
-        base.include(Enjoy::Parts::VNode::Mixin)
-        base.include(Enjoy::Parts::API)
-        base.include(Enjoy::Parts::Callbacks)
-        base.include(Enjoy::Parts::DslInstanceMethods)
-        base.include(Enjoy::Parts::ComponentRender) # this is required to override internal_render from VNode::Mixin
+        base.include(::Enjoy::Parts::VNode::Mixin)
+        base.include(::Enjoy::Parts::API)
+        base.include(::Enjoy::Parts::Callbacks)
+        base.include(::Enjoy::Parts::DslInstanceMethods)
+        base.include(::Enjoy::Parts::ComponentRender) # this is required to override internal_render from VNode::Mixin
         base.class_eval do
           define_callback :before_mount
           define_callback :after_mount
@@ -23,12 +23,10 @@ module Enjoy
           define_callback :after_update
           define_callback :before_unmount
         end
-        base.extend(Enjoy::Parts::ClassMethods)
+        base.extend(::Enjoy::Parts::ClassMethods)
       end
 
       # base_dom_node: the dom_node of this component
-      # parent_dom_node: the dom node this component is atached to
-      # props: properties
       # state: state
       attr_accessor :prev_attributes, :prev_state, :state
 
@@ -100,8 +98,8 @@ module Enjoy
       end
 
       def private_render_and_diff(is_update, &block)
-        res = instance_exec &block
-        @parent_v_node.children << res if @parent_v_node && !res.respond_to?(:is_vnode?)
+        res = instance_exec(&block)
+        @parent_v_node.children << res if @parent_v_node && @parent_v_node.respond_to?(:is_vnode?) && !res.respond_to?(:is_vnode?)
 
         prev_base_dom_node = @base_dom_node
         if opts[:sync_render] || is_update
@@ -131,7 +129,7 @@ module Enjoy
         if !@base_dom_node || opts[:mount_all]
           component_will_mount
         else
-          component_will_receive_attributes(attributes)
+          component_will_receive_props(attributes)
         end
 
         @prev_attributes = @attributes unless @prev_attributes
