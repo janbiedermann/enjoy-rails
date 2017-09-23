@@ -1,4 +1,6 @@
+require 'enjoy/parts/params'
 require 'enjoy/parts/v_node'
+require 'enjoy/parts/validator'
 
 module Enjoy
   module Parts
@@ -25,15 +27,15 @@ module Enjoy
         backtrace[1..-1].each { |line| message_array << line }
       end
 
-      def render(tag, params = {}, &block)
+      def render(tag, *params, &block)
         if tag
           define_method(:render) do
             self.node_name = tag
-            internal_render(params, &block)
+            internal_render(*params, &block)
           end
         else
           define_method(:render) do
-            internal_render(params, &block)
+            internal_render(*params, &block)
           end
         end
       end
@@ -42,15 +44,15 @@ module Enjoy
       # of the component, i.e. Foo::Bar.baz === Foo::Bar().baz
 
       # def method_missing(name, *args, &block)
-      #   puts "class method_missing #{name}"
-      #   Object.method_missing(name, *args, &children) unless args.empty?
-      #   VNode.new(name, *args, [], nil, &block)
+      #   component_class = find_component(name)
+      #   return component_class.new('div', nil, nil).render if component_class
+      #   VNode.new(name, nil, nil, *args, &block)
+      #   # Object.method_missing(name, *args, &block)
       # end
-      #
-      # private
-      #
+
+      private
+
       # def find_component(name)
-      #   puts "class find component"
       #   component = lookup_const(name)
       #   if component && !component.method_defined?(:render)
       #     raise "#{name} does not appear to be a component."
@@ -59,7 +61,6 @@ module Enjoy
       # end
       #
       # def lookup_const(name)
-      #   puts "class lookup const"
       #   return nil unless name =~ /^[A-Z]/
       #   scopes = self.class.name.to_s.split('::').inject([Module]) do |nesting, next_const|
       #     nesting + [nesting.last.const_get(next_const)]
@@ -67,11 +68,11 @@ module Enjoy
       #   scope = scopes.detect { |s| s.const_defined?(name) }
       #   scope.const_get(name) if scope
       # end
-      #
-      # def validator
-      #   @validator ||= Validator.new(props_wrapper)
-      # end
-      #
+
+      def validator
+        @validator ||= ::Enjoy::Parts::Validator.new(params_wrapper)
+      end
+
       # def prop_types
       #   if self.validator
       #     {
@@ -91,33 +92,33 @@ module Enjoy
       # def default_props
       #   validator.default_props
       # end
-      #
-      # def params(&block)
-      #   validator.build(&block)
-      # end
-      #
-      # def props_wrapper
-      #   @props_wrapper ||= Class.new(PropsWrapper)
-      # end
-      #
-      # def param(*args)
-      #   if args[0].is_a? Hash
-      #     options = args[0]
-      #     name = options.first[0]
-      #     default = options.first[1]
-      #     options.delete(name)
-      #     options.merge!({default: default})
-      #   else
-      #     name = args[0]
-      #     options = args[1] || {}
-      #   end
-      #   if options[:default]
-      #     validator.optional(name, options)
-      #   else
-      #     validator.requires(name, options)
-      #   end
-      # end
-      #
+
+      def params(&block)
+        validator.build(&block)
+      end
+
+      def params_wrapper
+        @params_wrapper ||= ::Enjoy::Parts::Params
+      end
+
+      def param(*args)
+        if args[0].is_a? Hash
+          options = args[0]
+          name = options.first[0]
+          default = options.first[1]
+          options.delete(name)
+          options.merge!({default: default})
+        else
+          name = args[0]
+          options = args[1] || {}
+        end
+        if options[:default]
+          validator.optional(name, options)
+        else
+          validator.requires(name, options)
+        end
+      end
+
       # def collect_other_params_as(name)
       #   validator.allow_undefined_props = true
       #   validator_in_lexical_scope = validator
