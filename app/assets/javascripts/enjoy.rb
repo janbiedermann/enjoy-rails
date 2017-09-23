@@ -356,10 +356,12 @@ module Enjoy
 
   def self.start(component_class, parent = nil)
     ready? do
-      parent = Enjoy.find(tag: 'body') unless parent
-      c = component_class.new('div', nil, parent)
-      c.opts[:sync_render] = true
-      c.render
+      benchmark('app') {
+        parent = Enjoy.find(tag: 'body') unless parent
+        c = component_class.new('div', nil, parent)
+        c.opts[:sync_render] = true
+        c.render
+      }
     end
   end
 end
