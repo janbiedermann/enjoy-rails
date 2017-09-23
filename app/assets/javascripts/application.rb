@@ -27,7 +27,6 @@ class OlaComponent
     DIV {
       a = 'test '
       DIV { a }
-      puts 'a: ' + a
       b = params.more_text
       P { 'lorem ipsum dolor 2 param:' + b }
       DIV {
@@ -101,7 +100,7 @@ end
 Enjoy.start(TestComponent)
 # Enjoy.start(MasterComponent)
 
-# `setTimeout(function() { console.log(document.getElementsByTagName("*").length) }, 1000)`
+`setTimeout(function() { console.log(document.getElementsByTagName("*").length) }, 1000)`
 
 
 # `setTimeout(function() {
