@@ -20,7 +20,7 @@ module Enjoy
         private_set_properties(props, {}, block)
       end
 
-      def set_props!(prop, &block)
+      def set_props!(props, &block)
         private_set_properties(props, { replace: true }, block)
       end
 
