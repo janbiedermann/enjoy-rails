@@ -36,22 +36,27 @@ module Enjoy
   #   *	@param {Element} [dom=null]		A DOM node to mutate into the shape of the `vnode`
   #   *	@param {VNode} vnode			A VNode (with descendants forming a tree) representing the desired DOM structure
   #   *	@returns {Element} dom			The created/mutated element
-  def self.diff(dom_node, vnode, opts, parent_dom_node, component_root)
+  def self.diff(dom_node, vnode, parent_dom_node, component_root)
+    dom_node = `undefined` if dom_node == nil
     # diffLevel having been 0 here indicates initial entry into the diff (not a subdiff)
-    @@svg_mode = false
-    @@hydrating = false
+    `Opal.Enjoy['svg_mode'] = false`
+    `Opal.Enjoy['hydrating'] = false`
     diff_level_incr
     # when first starting the diff, check if we're diffing an SVG or within an SVG
-    @@svg_mode = parent_dom_node && `parent_dom_node.parentNode && parent_dom_node.parentNode.ownerSVGElement!==undefined`
+    `Opal.Enjoy['svg_mode'] = (parent_dom_node !== undefined && parent_dom_node.parentNode && parent_dom_node.parentNode.ownerSVGElement !== undefined)`
     # hydration is indicated by the existing element to be diffed not having a prop cache
-    @@hydrating = dom_node ? `'__prop_cache__' in dom_node` : false
-    ret_node = idiff(dom_node, vnode, opts, component_root)
+    `Opal.Enjoy['hydrating'] = (dom_node !== undefined ? ('__prop_cache__' in dom_node) : false)`
+    ret_node = idiff(dom_node, vnode, component_root)
     # append the element if its a new parent
-    `parent_dom_node.appendChild(ret_node)` if parent_dom_node && (`ret_node.parentNode!==parent_dom_node`)
+    %x{
+      if (parent_dom_node !== undefined && (ret_node.parentNode!==parent_dom_node)) {
+        parent_dom_node.appendChild(ret_node);
+      }
+    }
     # diffLevel being reduced to 0 means we're exiting the diff
     level = diff_level_decr
     unless level == 0
-      @@hydrating = false
+      `Opal.Enjoy['hydrating'] = false`
       # invoke queued componentDidMount lifecycle methods
       flush_mounts unless component_root
     end
@@ -63,95 +68,138 @@ module Enjoy
   # *	@param {Object} attrs		The desired end-state key-value attribute pairs
   # *	@param {Object} old			Current/previous attributes (from previous VNode or element's prop cache)
   def self.diff_attributes(dom_node, v_node, old)
-    attrs = v_node.attributes
-    old.each do |name, val|
-      next unless !(attrs && attrs[name]) && val
-      old_name = val
-      old[name] = nil
-      set_accessor(dom_node, v_node, name, old_name, nil, @svg_mode)
-    end
-    attrs.each do |name, val|
-      next unless name != 'children' && name != 'innerHTML' && !old.keys.include?(name) ||
-        attrs[name] != (name == 'value' || name == ('checked' ? `dom_node[name]` : old[name]))
-      old_name = old[name]
-      old[name] = val
-      set_accessor(dom_node, v_node, name, old_name, old[name], @svg_mode)
-    end
+    %x{
+      var attrs = v_node.$attributes();
+      var attrs_keys = attrs.$keys();
+      if (attrs_keys.length > 0) {
+        for (var i = 0; i <  attrs_keys.length; i++) {
+          name = attrs_keys[i];
+          if (!(name !== 'children' && name !== 'innerHTML' && old[name] === undefined ||
+            attrs.$fetch(name) !== (name === attrs.$fetch(name) || name === (checked ? dom_node[name] : old[name])))) {
+            continue;
+          }
+          old_name = old[name];
+          old[name] = attrs.$fetch(name);
+          Opal.Enjoy.$set_accessor(dom_node, v_node, name, old_name, old[name], Opal.Enjoy['svg_mode']);
+        }
+      }
+      if (old.length > 0) {   
+        for (var oattr in old) {
+          if ( !(!((attrs.$size() > 0) && attrs[name] !== undefined) && old[oattr] !== undefined)) {
+            continue;
+          }
+          old_name = old[oattr];
+          old[name] = nil;
+          Opal.Enjoy.$set_accessor(dom_node, v_node, name, old_name, nil, Opal.Enjoy['svg_mode']);
+        }
+      }
+    }
   end
 
-  def self.diff_node_children(dom_node, vchildren, opts, hydrating)
-    original_children = `dom_node.childNodes`
-    oc_len = `(original_children && original_children.length)` ? `original_children.length` : 0
-    children = []
-    keyed = {}
-    keyed_len = 0
-    min = 0
-    children_len = 0
-    vlen = vchildren ? vchildren.size : 0
+  def self.diff_node_children(dom_node, vchildren, hydrating)
+    %x{
+      var original_children = dom_node.childNodes;
+      var oc_len = original_children.length;
+      var children = [];
+      var keyed_len = 0;
+      var min = 0;
+      var children_len = 0;
+      var vlen = (vchildren !== undefined) ? vchildren.$size() : 0;
+      var keyed = {};
+    
+      // Build up a map of keyed children and an Array of unkeyed children:
+      if (oc_len > 0) {
+        for (var i = 0; i < oc_len; i++) {
+          var child = original_children[i];
+          var props = child['__prop_cache__'];
+          var o_node = child['DomNode'];
+          var props_key = props ? props.key : undefined;
+          var chosen_key = o_node && o_node.component ? o_node.component.key : props_key;
+          var key = (vlen && props) ? chosen_key : undefined;
+          tv = hydrating ? child.nodeValue.trim() : true
+          if (key !== undefined) {
+            keyed_len++;
+            keyed[key] = child
+          } else if (props !== undefined || ((child.splitText !== undefined) ? tv : hydrating)) {
+            children[children_len++] = child
+          }
+        }
+      }
+    
+      if (vlen > 0) {
+        // cache method reference for performance
+        var idiff = Opal.Enjoy.$idiff;
 
-    # Build up a map of keyed children and an Array of unkeyed children:
-    (0...oc_len).each do |i|
-      child = `original_children.item(i)`
-      props = `child['__prop_cache__']`
-      o_node = `child['DomNode']`
-      props_key = props ? `props.key` : nil
-      chosen_key = o_node && o_node.component ? o_node.component.key : props_key
-      key = vlen && props ? chosen_key : nil
-      tv = hydrating ? `child.nodeValue.trim()` : true
-      if key
-        keyed_len += 1
-        keyed[key] = child
-      elsif props || (`child.splitText!==undefined` ? tv : hydrating)
-        children[children_len += 1] = child
-      end
-    end
+        // if we have an empty dom_node originally, then we create the complete tree below it
+        // in this case its much faster if we render in to a fragment first, and then attach that fragment to the dom
+        var fragment;
+        var vlen_frag = 1;
+        var vlen_last = vlen - 1;
+        var empty_dom_node = (dom_node.nodeValue === null);
+        if (empty_dom_node && vlen > vlen_frag) fragment = document.createDocumentFragment(); // create fragment
 
-    (0...vlen).each do |i|
-      vchild = vchildren[i]
-      child = nil
+        for (var i = 0; i < vlen; i++) {
+          var vchild = vchildren[i];
+          var child = undefined;
+          var key = vchild['$respond_to?']('is_vnode?') ? vchild.key : undefined;
+          var o_child;
 
-      key = vchild.is_a?(::Enjoy::Parts::VNode) ? vchild.key : nil
-      if key && keyed_len && keyed[key]
-        child = keyed[key]
-        keyed[key] = nil
-        keyed_len -= 1
-      elsif !child && min < children_len
-        (min..children_len).each do |j|
-          c = children[j]
-          next unless children[j] && is_named_like(c,vchild.node_name)
-          child = c
-          children[j] = nil
-          children_len -= 1 if j == children_len
-          min += 1 if j == min
-          break
-        end
-      end
-      child = idiff(child,vchild, opts)
+          if (key !== undefined && keyed_len > 0 && keyed[key] !== undefined) {
+            child = keyed[key];
+            keyed[key] = undefined;
+            keyed_len--;
+          } else if (child === undefined && min < children_len) {
+            for (var j = min; j < children_len; j++) {
+              if (!(children[j] !== undefined && (children[j].nodeName === vchild.node_name || children[j].nodeName.toLowerCase() === vchild.node_name.toLowerCase()))) {
+                continue;
+              }
+              child = children[j];
+              children[j] = undefined;
+              if (j === children_len) children_len--;
+              if (j === min) min++;
+              break;
+            }
+          }
 
-      f = `original_children[i]`
-      if child && `child !== dom_node` && `child !== f`
-        if `f===undefined || f===null`
-          `dom_node.appendChild(child)`
-        elsif child == `f.nextSibling`
-          remove_from_dom(f)
-        else
-          `dom_node.insertBefore(child, f)`
-        end
-      end
-    end
+          child = idiff(child, vchild);
 
-    # remove unused eyed children
-    if keyed_len
-      keyed.each do |i|
-        recollect_node_tree(keyed[i]) if keyed[i]
-      end
-    end
+          o_child = original_children[i]
+          if (child !== undefined && child !== dom_node && child !== o_child) {
+            if (o_child === undefined || o_child === null) {
+              if (empty_dom_node && vlen > vlen_frag) {
+                // no dom_node so we render into the fragment
+                fragment.appendChild(child);
+                // in case we rendered the last child in to the fragment we can finally attach the fragment
+                if (i === vlen_last) dom_node.appendChild(fragment);
+              } else {
+                dom_node.appendChild(child);
+              }
+            } else if (child === o_child.nextSibling) {
+              Opal.Enjoy.$remove_from_dom(o_child);
+            } else {
+              dom_node.insertBefore(child, );
+            }
+          }
+        }
+      }
 
-    # remove orphaned unkeyed children
-    while min <= children_len
-      child = children[children_len -= 1]
-      recollect_node_tree(child) if child
-    end
+      // remove unused keyed children
+      if (keyed_len > 0) {
+        for (var key in keyed) {
+          if (keyed.hasOwnProperty(key)) {
+            Opal.Enjoy.$recollect_node_tree(keyed[key]);
+          }
+        }
+      }
+
+      // remove orphaned unkeyed children
+      while (min <= children_len) {
+        var child = children[children_len--];
+        if (child !== undefined) {
+          Opal.Enjoy.$recollect_node_tree(child);
+        }
+      }
+    }
   end
 
   def self.enqueue_render(component)
@@ -183,71 +231,86 @@ module Enjoy
   end
 
   # Internals of `diff()`, separated to allow bypassing diffLevel / mount flushing.
-  def self.idiff(dom_node, vnode, opts, component_root = nil)
-    out = dom_node
-    prev_svg_mode = @svg_mode
-    # empty values (null, undefined, booleans) render as empty Text nodes
-    vnode = '' if !vnode || (vnode && vnode.is_a?(Boolean))
-    # Fast case: Strings & Numbers create/update Text nodes.
-    if vnode.is_a?(String) || vnode.is_a?(Integer)
-      # update if its already a text node
-      if `dom_node.splitText!==undefined` && `dom_node.parentNode` && (!dom_node.component || component_root)
-        # istanbul ignore if
-        # Browser quirk that can't be covered: https://github.com/developit/preact/commit/fd4f21f5c45dfd75151bd27b4c217d8003aa5eb9
-        `dom_node.nodeValue = vnode` if `dom_node.nodeValue` != vnode
-      else
-        # it wasn't a Text node: replace it with one and recycle the old Element
-        out = `document.createTextNode(vnode)`
-        `if (dom_node.parentNode) dom_node.parentNode.replaceChild(out, dom_node)`
-        recollect_node_tree(dom_node, true)
-      end
-      `out['__prop_cache__'] = true`
-    elsif vnode.respond_to?(:is_vnode?)
-      # If the VNode represents a Component, perform a component diff:
+  def self.idiff(dom_node, vnode, component_root = nil)
+    %x{
+      var out = dom_node;
+      var prev_svg_mode = Opal.Enjoy['svg_mode'];
+      // empty values (null, undefined, booleans) render as empty Text nodes
+      if (vnode === undefined || typeof(vnode) === 'boolean') {
+        vnode = '';
+      }
+      // Fast case: Strings & Numbers create/update Text nodes.
+      if (typeof(vnode) === 'string' || typeof(vnode) === 'number') {
+        // update if its already a text node
+        if (dom_node !== undefined && dom_node.splitText!==undefined && dom_node.parentNode && (!dom_node.component || component_root)) {
+          // istanbul ignore if Browser quirk that can't be covered: https://github.com/developit/preact/commit/fd4f21f5c45dfd75151bd27b4c217d8003aa5eb9
+          if (dom_node.nodeValue !== vnode) dom_node.nodeValue = vnode;
+        } else {
+          // it wasn't a Text node: replace it with one and recycle the old Element
+          out = document.createTextNode(vnode);
+          if (dom_node !== undefined && dom_node.parentNode) dom_node.parentNode.replaceChild(out, dom_node);
+          Opal.Enjoy.$recollect_node_tree(dom_node, true);
+        }
+        out['__prop_cache__'] = true;
+      } else if (vnode['$respond_to?']('is_vnode?')) {
+        var fc;
+        // If the VNode represents a Component, perform a component diff:
+        // Tracks entering and exiting SVG namespace when descending through the tree.
+        svg_mode = vnode.node_name == 'svg' ? true : (vnode.node_name == 'foreign_object' ? false : prev_svg_mode);
+        if (dom_node === undefined || (dom_node !== undefined && (dom_node.nodeName == vnode.node_name || dom_node.nodeName.toLowerCase() == vnode.node_name.toLowerCase()))) {
+          if (svg_mode === true) {
+            out = document.createElementNS('http://www.w3.org/2000/svg', vnode.$node_name());
+          } else {
+            out = document.createElement(vnode.$node_name());
+          }
+          // move children into the replacement node
+          if (dom_node !== undefined) {
+            while (dom_node.firstChild !== undefined) {
+              out.appendChild(dom_node.firstChild);
+            }
+            // if the previous Element was mounted into the DOM, replace it inline
+            if (dom_node.dom_node.parentNode) dom_node.dom_node.parentNode.replaceChild(out, dom_node.dom_node);
+            // recycle the old element (skips non-Element node types)
+            Opal.Enjoy.$recollect_node_tree(dom_node, true);
+          }
+        }
 
-      vnode_name = vnode.node_name
+        fc = out.firstChild;
+        if (fc === null) fc = undefined;
+        props = (dom_node === undefined) ? {} : dom_node['__prop_cache__'];
+        vchildren = vnode.children;
 
-      # Tracks entering and exiting SVG namespace when descending through the tree.
-      svg_mode = vnode_name == 'svg' ? true : (vnode_name == 'foreign_object' ? false : svg_mode)
+        if (props === undefined) {
+          out['__prop_cache__'] = {};
+          if (out.attributes !== undefined && out.attributes.length > 0) {
+            props = Object.assign({}, out.attributes);
+          } else {
+            props = {};
+          }
+        }
 
-      if !dom_node || (dom_node && !is_named_like(dom_node, vnode_name))
-        out = svg_mode ? `document.createElementNS('http://www.w3.org/2000/svg', vnode_name)`: `document.createElement(vnode_name)`
-        # move children into the replacement node
-        if dom_node
-          while `dom_node.firstChild`
-            `out.appendChild(dom_node.firstChild)`
-          end
-          # if the previous Element was mounted into the DOM, replace it inline
-          `if (dom_node.dom_node.parentNode) dom_node.dom_node.parentNode.replaceChild(out, dom_node.dom_node)`
-          # recycle the old element (skips non-Element node types)
-          recollect_node_tree(dom_node, true)
-        end
-      end
-
-      fc = `out.firstChild`
-      props = `dom_node['__prop_cache__']`
-      vchildren = vnode.children
-
-      unless props
-        `out['__prop_cache__'] = {}`
-        props = {}.merge(`Opal.hash(out.attributes)`)
-      end
-
-      # Optimization: fast-path for elements containing a single TextNode:
-      if !@hydrating && vchildren && vchildren.size == 1 && vchildren[0].is_a?(String) && fc && `fc.splitText!==undefined` && !`fc.nextSibling`
-        `fc.nodeValue = vchildren[0]` if `fc.nodeValue` != vchildren[0]
-      elsif vchildren && vchildren.size || fc # otherwise, if there are existing or new children, diff them:
-        diff_node_children(out, vchildren, opts, @hydrating || props[:dangerously_set_inner_html])
-      end
-      diff_attributes(out, vnode, props)
-    end
-    @svg_mode = prev_svg_mode
-
-    out
+        // Optimization: fast-path for elements containing a single TextNode:
+        if (!Opal.Enjoy['hydrating'] && vchildren && vchildren.length == 1 && typeof(vchildren[0]) === 'string' && fc !== undefined && fc.splitText !== undefined && fc.nextSibling === undefined) {
+          if (fc.nodeValue !== vchildren[0]) fc.nodeValue = vchildren[0];
+        } else if (vchildren !== undefined && vchildren.length > 0 || fc !== undefined) {
+          // otherwise, if there are existing or new children, diff them:
+          Opal.Enjoy.$diff_node_children(out, vchildren, Opal.Enjoy['hydrating'] || props['dangerously_set_inner_html']);
+        }
+        Opal.Enjoy.$diff_attributes(out, vnode, props);
+      }
+      Opal.Enjoy['svg_mode'] = prev_svg_mode;
+      return out;
+    }
   end
 
   def self.is_named_like(dom_node, vname)
-    `dom_node.nodeName` == vname || `dom_node.nodeName`.downcase == vname.downcase
+    %x{
+      if (dom_node !== undefined && dom_node.nodeName !== undefined && vname !== undefined) {
+        return (dom_node.nodeName == vname || dom_node.nodeName.toLowerCase() == vname.toLowerCase());
+      } else {
+        return false;
+      }
+    }
   end
 
   def self.ready?(&block)
@@ -259,13 +322,15 @@ module Enjoy
   #	*	@param {Node} node						DOM node to start unmount/removal from
   # *	@param {Boolean} [unmountOnly=false]	If `true`, only triggers unmount lifecycle, skips removal
   def self.recollect_node_tree(dom_node, unmount_only = false)
-    opal_dom_node = `dom_node['DomNode']`
-    if opal_dom_node && opal_dom_node.component
-      # if node is owned by a Component, unmount that component (ends up recursing back here)
-      opal_dom_node.component.unmount
-    else
-      remove_from_dom(dom_node) unless unmount_only
-      remove_children(dom_node)
+    if `dom_node !== undefined`
+      opal_dom_node = `dom_node['DomNode']`
+      if opal_dom_node && opal_dom_node.component
+        # if node is owned by a Component, unmount that component (ends up recursing back here)
+        opal_dom_node.component.unmount
+      else
+        remove_from_dom(dom_node) unless unmount_only
+        remove_children(dom_node)
+      end
     end
   end
 
@@ -284,7 +349,7 @@ module Enjoy
   def self.remove_from_dom(dom_node)
     `var parent_node; parent_node = dom_node.parentNode;
 		 if (parent_node) parent_node.removeChild(dom_node);
-     if (dom_node['DomNode']) dom_node['DomNode'].dom_node = null`
+     if (dom_node['DomNode']) dom_node['DomNode'].dom_node = undefined`
   end
 
   def self.rerender
@@ -301,50 +366,54 @@ module Enjoy
   # *	@param {any} value	An attribute value, such as a function to be used as an event handler
   # *	@param {Boolean} isSvg	Are we currently diffing inside an svg?
   def self.set_accessor(dom_node, v_node, name, old, value, svg_mode)
-    name = 'class' if name == 'className'
-
-    # ignore name == 'key'
-    if name == 'class' && !svg_mode
-      `dom_node.className = value || ''`
-    elsif name == 'style'
-      `dom_node.style.cssText = value || ''` if !value || value.is_a?(String) || old.is_a?(String)
-      if old.is_a?(Array)
-        old.each { |o| `dom_node.style[o] = ''` unless value.include? o }
-      end
-      value.each do |v|
-        val = (v.is_a?(Integer) && (!IS_NON_DIMENSIONAL.test(v)) ? v + 'px' : v)
-        `dom_node.style[v] = val`
-      end
-    elsif name == 'dangerouslySetInnerHTML'
-      `dom_node.innerHTML = value || ''`
-    elsif name.is_a?(String) && name[0..1] == 'on'
-      name_woc = name.sub(/_capture$/, '')
-      use_capture = name != name_woc
-      name = name_woc.downcase[2..-1]
-      if value
-        `dom_node.addEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture)` unless old
-      else
-        `dom_node.removeEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture)`
-      end
-    elsif name != 'list' && name != 'type' && !svg_mode && `name in dom_node`
-      set_property(dom_node, name, value ? value : '')
-      `dom_node.removeAttribute(name)` unless value
-    else
-      ns = svg_mode && name != (name = name.sub(/^xlink\:?/, ''))
-      if !value
-        if ns
-          `dom_node.removeAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase())`
-        else
-          `dom_node.removeAttribute(name)`
-        end
-      else
-        if ns
-          `dom_node.setAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase(), value)`
-        else
-          `dom_node.setAttribute(name, value)`
-        end
-      end
-    end
+    %x{
+      if (name === 'className') name = 'class';
+      // ignore name == 'key'
+      if (name === 'class' && !svg_mode) {
+        dom_node.className = value || ''
+      } else if (name === 'style') {
+        if (!value || typeof(value) === 'string' || typeof(old) === 'string') dom_node.style.cssText = value || '';
+        if (Array.isArray(old)) {
+          for (var i = 0; i < old.legth; i++) {
+            if (! (value.indexOf(old[i]) > -1)) {
+              dom_node.style[old[i]] = '';
+            }
+          }
+        }
+        for (var i = 0; i < value.length; i++) {
+          dom_node.style[value[i]] = (Number.isInteger(value[i]) && (!IS_NON_DIMENSIONAL.test(v)) ? value[i] + 'px' : value[i]);
+        }
+      } else if (name === 'dangerouslySetInnerHTML') {
+        dom_node.innerHTML = value || '';
+      } else if (typeof(name) === 'string' && name.substring(0,2) === 'on') {
+        var name_woc = name.replace(/_capture$/, '');
+        use_capture = name != name_woc;
+        name = name_woc.toLowerCase().substring(2, name_woc.length);
+        if (value !== undefined && value !== null) {
+          if (old === undefined || old === null) dom_node.addEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture);
+        } else {
+          dom_node.removeEventListener(name, function(e) { v_node.$event_handler(e) }, use_capture);
+        }
+      } else if (name !== 'list' && name !== 'type' && !svg_mode && (name in dom_node)) {
+        OpalEnjoy.$set_property(dom_node, name, value ? value : '');
+        if (value === undefined || value === null) dom_node.removeAttribute(name);
+      } else {
+        ns = svg_mode && name !== (name = name.replace(/^xlink\:?/, ''))
+        if (value === undefined || value === null) {
+          if (ns === true) {
+            dom_node.removeAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase());
+          } else {
+            dom_node.removeAttribute(name);
+          }
+        } else {
+          if (ns === true) {
+            dom_node.setAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase(), value);
+          } else {
+            dom_node.setAttribute(name, value);
+          }
+        }
+      }
+    }
   end
 
   # Attempt to set a DOM property to the given value.

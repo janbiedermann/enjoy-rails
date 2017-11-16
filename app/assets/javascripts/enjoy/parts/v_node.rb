@@ -14,6 +14,7 @@ module Enjoy
         attr_accessor :attributes, :base_dom_node, :children, :component, :key, :node_name, :opts, :parent_dom_node, :parent_v_node
 
         def initialize(tag, parent_v_node = nil, parent_dom_node = nil, attributes = {}, &block)
+          @base_dom_node = `undefined`
           @attributes = attributes ? attributes : {}
           @children = []
           @events = {}

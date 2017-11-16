@@ -15,7 +15,7 @@ module Enjoy
 
         @component = self
 
-        state = @state
+        # state = @state
         prev_attributes = @prev_attributes || attr
         prev_state = @prev_state || state
 
@@ -26,7 +26,7 @@ module Enjoy
 
         # if updating, ask component if it wants to be updated
         # otherwise invoke :component_will_update callback
-        private_invoke_will_update(prev_attributes, prev_state, attr, state) if is_update
+        private_invoke_will_update(prev_attributes, nil, attr, nil) if is_update
 
         # component will be rendered
         clean!

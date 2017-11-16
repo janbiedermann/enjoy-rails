@@ -1,6 +1,5 @@
 require 'rails-ujs'
 require 'cable'
-
 require 'opal'
 
 def benchmark(message)
@@ -19,6 +18,8 @@ class OlaComponent
 
   param :more_text, default: 'hello', type: String, allow_nil: true
 
+  # state important: 'wichtig'
+
   render do
     DIV { 'text to click' }
       .on(:click) do
@@ -30,11 +31,13 @@ class OlaComponent
       b = params.more_text
       P { 'lorem ipsum dolor 2 param:' + b }
       DIV {
-        DIV { 'text here to click for promise' }.promise_on(:click)
-                                                .do {
+        DIV { 'text here to click for promise' }.on(:click) do
                                                   `alert('I, Promise')`
-                                                }
-        P { 'lorem ipsum dolor 2' }
+                                                 end
+        P {
+          # i = state.important
+          "lorem ipsum dolor 2 state: #{i}"
+        }
         DIV {
           DIV { 'text here' }
           P { 'lorem ipsum dolor 2' }
@@ -98,7 +101,7 @@ class MasterComponent < Enjoy::Component
 end
 
 Enjoy.start(TestComponent)
-# Enjoy.start(MasterComponent)
+Enjoy.start(MasterComponent)
 
 `setTimeout(function() { console.log(document.getElementsByTagName("*").length) }, 1000)`
 

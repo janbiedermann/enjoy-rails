@@ -132,26 +132,6 @@ module Enjoy
       #   end
       # end
       #
-      # def define_state(*states, &block)
-      #   deprecation_warning "'define_state' is deprecated. Use the 'state' macro to declare states."
-      #   default_initial_value = (block && block.arity == 0) ? yield : nil
-      #   states_hash = (states.last.is_a?(Hash)) ? states.pop : {}
-      #   states.each { |name| state(name => default_initial_value) } # was states_hash[name] = default_initial_value
-      #   states_hash.each { |name, value| state(name => value) }
-      # end
-      #
-      # def export_state(*states, &block)
-      #   deprecation_warning "'export_state' is deprecated. Use the 'state' macro to declare states."
-      #   default_initial_value = (block && block.arity == 0) ? yield : nil
-      #   states_hash = (states.last.is_a?(Hash)) ? states.pop : {}
-      #   states.each { |name| states_hash[name] = default_initial_value }
-      #   states_hash.each do |name, value|
-      #     state(name => value, scope: :class, reader: true)
-      #     singleton_class.define_method("#{name}!") do |*args|
-      #       mutate.__send__(name, *args)
-      #     end
-      #   end
-      # end
       #
       # def native_mixin(item)
       #   native_mixins << item

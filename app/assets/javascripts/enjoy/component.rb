@@ -1,3 +1,4 @@
+require 'opal-activesupport'
 require 'enjoy/parts/v_node'
 require 'enjoy/parts/component_render'
 require 'enjoy/parts/callbacks'
@@ -5,17 +6,20 @@ require 'enjoy/parts/api'
 require 'enjoy/parts/class_methods'
 require 'enjoy/parts/dsl_instance_methods'
 require 'enjoy/parts/tags'
+require 'hyper-store'
 
 module Enjoy
   class Component
     module Mixin
       def self.included(base)
+        base.include(::Hyperloop::Store::Mixin)
         base.include(::Enjoy::Parts::VNode::Mixin)
         base.include(::Enjoy::Parts::API)
         base.include(::Enjoy::Parts::Callbacks)
         base.include(::Enjoy::Parts::DslInstanceMethods)
         base.include(::Enjoy::Parts::ComponentRender) # this is required to override internal_render from VNode::Mixin
         base.class_eval do
+          class_attribute :initial_state
           define_callback :before_mount
           define_callback :after_mount
           define_callback :before_receive_props
@@ -28,7 +32,7 @@ module Enjoy
 
       # base_dom_node: the dom_node of this component
       # state: state
-      attr_accessor :prev_attributes, :prev_state, :state
+      attr_accessor :prev_attributes, :prev_state
 
       def clean!
         @dirty = false
@@ -54,6 +58,11 @@ module Enjoy
         @disabled = false
       end
 
+      def initialize(tag, parent_v_node = nil, parent_dom_node = nil, attributes = {}, &block)
+        super(tag, parent_v_node, parent_dom_node, attributes, &block)
+        init_store
+      end
+
       def is_component?
         true
       end
@@ -64,7 +73,7 @@ module Enjoy
         base_dn = @base_dom_node
         disable!
         component_will_unmount
-        @base_dom_node = nil
+        @base_dom_node = `undefined`
         # recursively tear down & recollect high-order component children:
         Enjoy.remove_from_dom(base_dn)
         Enjoy.remove_children(base_dn)
@@ -86,15 +95,16 @@ module Enjoy
 
       def private_invoke_will_update(prev_attributes, prev_state, attributes, state)
         @attributes = prev_attributes
-        @state = prev_state
+        # @state = prev_state
         if !opts[:force_render] && respond_to?(:should_component_update?) && !send(:should_component_update?, attributes, state)
           @skip = true
         elsif
           component_will_update(attributes, state)
         end
         @attributes = attributes
-        @state = state
-        @prev_attributes = @prev_state = nil
+        # @state = state
+        @prev_attributes = nil
+        # @prev_state = nil
       end
 
       def private_render_and_diff(is_update, &block)
@@ -104,7 +114,7 @@ module Enjoy
         prev_base_dom_node = @base_dom_node
         if opts[:sync_render] || is_update
           opts[:mount_all] = opts[:mount_all] || !is_update
-          @base_dom_node = Enjoy.diff(@base_dom_node, self, @opts, @parent_dom_node, true)
+          @base_dom_node = Enjoy.diff(@base_dom_node, self, @parent_dom_node, true)
         end
 
         if @base_dom_node && `this.base_dom_node!==prev_base_dom_node`
@@ -149,8 +159,8 @@ module Enjoy
       #    *	@param {function} callback	A function to be called once component state is updated
       def private_set_state(state, opts)
         # TODO: run callback?
-        @prev_state = @state unless @prev_state
-        @state = opts[:replace] ? state : @prev_state.merge(state)
+        # @prev_state = @state unless @prev_state
+        # @state = opts[:replace] ? state : @prev_state.merge(state)
         Enjoy.enqueue_render(self)
       end
     end
